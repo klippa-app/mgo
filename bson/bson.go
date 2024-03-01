@@ -26,7 +26,7 @@
 
 // Package bson is an implementation of the BSON specification for Go:
 //
-//     http://bsonspec.org
+//	http://bsonspec.org
 //
 // It was created as part of the mgo MongoDB driver for Go, but is standalone
 // and may be used on its own without the driver.
@@ -50,6 +50,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
 
 //go:generate go run bson_corpus_spec_test_generator.go
@@ -121,12 +123,11 @@ type Getter interface {
 //
 // For example:
 //
-//     type MyString string
+//	type MyString string
 //
-//     func (s *MyString) SetBSON(raw bson.Raw) error {
-//         return raw.Unmarshal(s)
-//     }
-//
+//	func (s *MyString) SetBSON(raw bson.Raw) error {
+//	    return raw.Unmarshal(s)
+//	}
 type Setter interface {
 	SetBSON(raw Raw) error
 }
@@ -139,7 +140,7 @@ var ErrSetZero = errors.New("set to zero")
 // M is a convenient alias for a map[string]interface{} map, useful for
 // dealing with BSON in a native way.  For instance:
 //
-//     bson.M{"a": 1, "b": true}
+//	bson.M{"a": 1, "b": true}
 //
 // There's no special handling for this type in addition to what's done anyway
 // for an equivalent map type.  Elements in the map will be dumped in an
@@ -148,7 +149,7 @@ type M map[string]interface{}
 
 // D represents a BSON document containing ordered elements. For example:
 //
-//     bson.D{{"a", 1}, {"b", true}}
+//	bson.D{{"a", 1}, {"b", true}}
 //
 // In some situations, such as when creating indexes for MongoDB, the order in
 // which the elements are defined is important.  If the order is not important,
@@ -177,8 +178,7 @@ func (d D) Map() (m M) {
 //
 // Relevant documentation:
 //
-//     http://bsonspec.org/#/specification
-//
+//	http://bsonspec.org/#/specification
 type Raw struct {
 	Kind byte
 	Data []byte
@@ -202,6 +202,21 @@ type RawDocElem struct {
 //
 // http://www.mongodb.org/display/DOCS/Object+Ids
 type ObjectId string
+
+func (o *ObjectId) UnmarshalBSON(data []byte) error {
+	return Raw{
+		Kind: ElementObjectId,
+		Data: data,
+	}.Unmarshal(o)
+}
+
+func (o *ObjectId) IsZero() bool {
+	return o == nil || len([]rune(*o)) == 0
+}
+
+func (o ObjectId) MarshalBSONValue() (bsontype.Type, []byte, error) {
+	return bsontype.ObjectID, []byte(o), nil
+}
 
 // ObjectIdHex returns an ObjectId from the provided hex representation.
 // Calling this function with an invalid hex representation will
@@ -475,13 +490,12 @@ var Undefined undefined
 // Binary is a representation for non-standard binary values.  Any kind should
 // work, but the following are known as of this writing:
 //
-//   0x00 - Generic. This is decoded as []byte(data), not Binary{0x00, data}.
-//   0x01 - Function (!?)
-//   0x02 - Obsolete generic.
-//   0x03 - UUID
-//   0x05 - MD5
-//   0x80 - User defined.
-//
+//	0x00 - Generic. This is decoded as []byte(data), not Binary{0x00, data}.
+//	0x01 - Function (!?)
+//	0x02 - Obsolete generic.
+//	0x03 - UUID
+//	0x05 - MD5
+//	0x80 - User defined.
 type Binary struct {
 	Kind byte
 	Data []byte
@@ -543,34 +557,33 @@ func handleErr(err *error) {
 // The tag may also contain flags to tweak the marshalling behavior for
 // the field. The tag formats accepted are:
 //
-//     "[<key>][,<flag1>[,<flag2>]]"
+//	"[<key>][,<flag1>[,<flag2>]]"
 //
-//     `(...) bson:"[<key>][,<flag1>[,<flag2>]]" (...)`
+//	`(...) bson:"[<key>][,<flag1>[,<flag2>]]" (...)`
 //
 // The following flags are currently supported:
 //
-//     omitempty  Only include the field if it's not set to the zero
-//                value for the type or to empty slices or maps.
+//	omitempty  Only include the field if it's not set to the zero
+//	           value for the type or to empty slices or maps.
 //
-//     minsize    Marshal an int64 value as an int32, if that's feasible
-//                while preserving the numeric value.
+//	minsize    Marshal an int64 value as an int32, if that's feasible
+//	           while preserving the numeric value.
 //
-//     inline     Inline the field, which must be a struct or a map,
-//                causing all of its fields or keys to be processed as if
-//                they were part of the outer struct. For maps, keys must
-//                not conflict with the bson keys of other struct fields.
+//	inline     Inline the field, which must be a struct or a map,
+//	           causing all of its fields or keys to be processed as if
+//	           they were part of the outer struct. For maps, keys must
+//	           not conflict with the bson keys of other struct fields.
 //
 // Some examples:
 //
-//     type T struct {
-//         A bool
-//         B int    "myb"
-//         C string "myc,omitempty"
-//         D string `bson:",omitempty" json:"jsonkey"`
-//         E int64  ",minsize"
-//         F int64  "myf,omitempty,minsize"
-//     }
-//
+//	type T struct {
+//	    A bool
+//	    B int    "myb"
+//	    C string "myc,omitempty"
+//	    D string `bson:",omitempty" json:"jsonkey"`
+//	    E int64  ",minsize"
+//	    F int64  "myf,omitempty,minsize"
+//	}
 func Marshal(in interface{}) (out []byte, err error) {
 	return MarshalBuffer(in, make([]byte, 0, initialBufferSize))
 }
@@ -593,28 +606,28 @@ func MarshalBuffer(in interface{}, buf []byte) (out []byte, err error) {
 // The tag may also contain flags to tweak the marshalling behavior for
 // the field. The tag formats accepted are:
 //
-//     "[<key>][,<flag1>[,<flag2>]]"
+//	"[<key>][,<flag1>[,<flag2>]]"
 //
-//     `(...) bson:"[<key>][,<flag1>[,<flag2>]]" (...)`
+//	`(...) bson:"[<key>][,<flag1>[,<flag2>]]" (...)`
 //
 // The following flags are currently supported during unmarshal (see the
 // Marshal method for other flags):
 //
-//     inline     Inline the field, which must be a struct or a map.
-//                Inlined structs are handled as if its fields were part
-//                of the outer struct. An inlined map causes keys that do
-//                not match any other struct field to be inserted in the
-//                map rather than being discarded as usual.
+//	inline     Inline the field, which must be a struct or a map.
+//	           Inlined structs are handled as if its fields were part
+//	           of the outer struct. An inlined map causes keys that do
+//	           not match any other struct field to be inserted in the
+//	           map rather than being discarded as usual.
 //
 // The target field or element types of out may not necessarily match
 // the BSON values of the provided data.  The following conversions are
 // made automatically:
 //
-// - Numeric types are converted if at least the integer part of the
-//   value would be preserved correctly
-// - Bools are converted to numeric types as 1 or 0
-// - Numeric types are converted to bools as true if not 0 or false otherwise
-// - Binary and string BSON data is converted to a string, array or byte slice
+//   - Numeric types are converted if at least the integer part of the
+//     value would be preserved correctly
+//   - Bools are converted to numeric types as 1 or 0
+//   - Numeric types are converted to bools as true if not 0 or false otherwise
+//   - Binary and string BSON data is converted to a string, array or byte slice
 //
 // If the value would not fit the type and cannot be converted, it's
 // silently skipped.
