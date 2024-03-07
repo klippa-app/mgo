@@ -2315,7 +2315,7 @@ func (s *S) TestBatchSizeZeroGetMore(c *C) {
 	c.Assert(iter.Close(), IsNil)
 }
 
-func serverCursorsOpen(session *mgo.Session) int {
+func serverCursorsOpen(session mgo.Session) int {
 	var result struct {
 		Cursors struct {
 			TotalOpen int `bson:"totalOpen"`
@@ -3677,7 +3677,7 @@ var indexTests = []struct {
 //
 // The default "_id_" index is never returned, and the "v" field is removed from
 // the response.
-func getIndex34(session *mgo.Session, db, collection, name string) M {
+func getIndex34(session mgo.Session, db, collection, name string) M {
 	cmd := bson.M{"listIndexes": collection}
 	result := M{}
 	session.DB(db).Run(cmd, result)

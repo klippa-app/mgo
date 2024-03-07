@@ -61,7 +61,7 @@ func TestAll(t *testing.T) {
 }
 
 type S struct {
-	session *mgo.Session
+	session mgo.Session
 	stopped bool
 	build   mgo.BuildInfo
 	frozen  []string

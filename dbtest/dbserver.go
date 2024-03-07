@@ -24,7 +24,7 @@ import (
 // Before the DBServer is used the SetPath method must be called to define
 // the location for the database files to be stored.
 type DBServer struct {
-	session *mgo.Session
+	session mgo.Session
 	output  bytes.Buffer
 	server  *exec.Cmd
 	dbpath  string
@@ -133,7 +133,7 @@ func (dbs *DBServer) Stop() {
 // must be closed after the test is done with it.
 //
 // The first Session obtained from a DBServer will start it.
-func (dbs *DBServer) Session() *mgo.Session {
+func (dbs *DBServer) Session() mgo.Session {
 	if dbs.server == nil {
 		dbs.start()
 	}

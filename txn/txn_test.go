@@ -20,7 +20,7 @@ func TestAll(t *testing.T) {
 
 type S struct {
 	server   dbtest.DBServer
-	session  *mgo.Session
+	session  mgo.Session
 	db       *mgo.Database
 	tc, sc   *mgo.Collection
 	accounts *mgo.Collection

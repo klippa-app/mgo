@@ -490,7 +490,7 @@ func (s *S) TestModePrimaryHiccup(c *C) {
 	// Establish a few extra sessions to create spare sockets to
 	// the master. This increases a bit the chances of getting an
 	// incorrect cached socket.
-	var sessions []*mgo.Session
+	var sessions []mgo.Session
 	for i := 0; i < 20; i++ {
 		sessions = append(sessions, session.Copy())
 		err = sessions[len(sessions)-1].Run("serverStatus", result)
@@ -1106,7 +1106,7 @@ func (s *S) TestDialWithReplicaSetName(c *C) {
 
 	rs2Members := []string{":40021", ":40022", ":40023"}
 
-	verifySyncedServers := func(session *mgo.Session, numServers int) {
+	verifySyncedServers := func(session mgo.Session, numServers int) {
 		// wait for the server(s) to be synced
 		for len(session.LiveServers()) != numServers {
 			c.Log("Waiting for cluster sync to finish...")
@@ -1569,7 +1569,7 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 
 func (s *S) TestPoolLimitSimple(c *C) {
 	for test := 0; test < 2; test++ {
-		var session *mgo.Session
+		var session mgo.Session
 		var err error
 		if test == 0 {
 			session, err = mgo.Dial("localhost:40001")
@@ -1632,7 +1632,7 @@ func (s *S) TestPoolLimitMany(c *C) {
 	session.SetPoolLimit(poolLimit)
 
 	// Consume the whole limit for the master.
-	var master []*mgo.Session
+	var master []mgo.Session
 	for i := 0; i < poolLimit; i++ {
 		s := session.Copy()
 		defer s.Close()
@@ -2215,13 +2215,13 @@ func (s *S) TestConnectServerFailed(c *C) {
 	for i := 0; i < maxDials; i++ {
 		finished.Add(1)
 		starting.Add(1)
-		go func(s0 *mgo.Session) {
+		go func(s0 mgo.Session) {
 			defer finished.Done()
 			for i := 0; ; i++ {
 				if atomic.LoadInt32(&done) == 1 {
 					break
 				}
-				err := func(s0 *mgo.Session) error {
+				err := func(s0 mgo.Session) error {
 					s := s0.Copy()
 					defer s.Close()
 					coll := s.DB("mydb").C("mycoll")

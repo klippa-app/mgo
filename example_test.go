@@ -102,7 +102,7 @@ func ExampleSession_concurrency() {
 	// 		- Limit concurrency at the application level, not with SetPoolLimit().
 
 	// This will be our concurrent worker
-	var doStuff = func(wg *sync.WaitGroup, session *Session) {
+	var doStuff = func(wg *sync.WaitGroup, session Session) {
 		defer wg.Done()
 
 		// Copy the session - if needed this will dial a new connection which
