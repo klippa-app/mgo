@@ -263,9 +263,9 @@ func (changeStream *ChangeStream) resume() error {
 
 	// change out the old connection to the database with the new connection.
 	if changeStream.sessionCopied {
-		changeStream.collection.Database.Session.Close()
+		changeStream.collection.Database.session.Close()
 	}
-	changeStream.collection.Database.Session = newSession
+	changeStream.collection.Database.session = newSession
 	changeStream.sessionCopied = true
 
 	opts := changeStream.options

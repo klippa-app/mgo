@@ -85,7 +85,7 @@ const (
 
 type Session interface {
 	LiveServers() (addrs []string)
-	DB(name string) *Database
+	DB(name string) *abstactDatabase
 	Login(cred *Credential) error
 	socketLogin(socket *mongoSocket) error
 	LogoutAll()
@@ -157,14 +157,39 @@ type abstractSession struct {
 	dialInfo *DialInfo
 }
 
-// Database holds collections of documents
+type Database interface {
+	C(name string) *Collection
+	CreateView(view string, source string, pipeline interface{}, collation *Collation) error
+	With(s Session) Database
+	GridFS(prefix string) *GridFS
+	Run(cmd interface{}, result interface{}) error
+	runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error
+	Login(user, pass string) error
+	Logout()
+	UpsertUser(user *User) error
+	runUserCmd(cmdName string, user *User) error
+	AddUser(username, password string, readOnly bool) error
+	RemoveUser(user string) error
+	DropDatabase() error
+	run(socket *mongoSocket, cmd, result interface{}) (err error)
+	FindRef(ref *DBRef) *Query
+	CollectionNames() (names []string, err error)
+
+	Session() Session
+}
+
+// abstactDatabase holds collections of documents
 //
 // Relevant documentation:
 //
 //	https://docs.mongodb.com/manual/core/databases-and-collections/#databases
-type Database struct {
-	Session Session
+type abstactDatabase struct {
+	session Session
 	Name    string
+}
+
+func (db *abstactDatabase) Session() Session {
+	return db.session
 }
 
 // Collection stores documents
@@ -173,7 +198,7 @@ type Database struct {
 //
 //	https://docs.mongodb.com/manual/core/databases-and-collections/#collections
 type Collection struct {
-	Database *Database
+	Database *abstactDatabase
 	Name     string // "collection"
 	FullName string // "db.collection"
 }
@@ -934,18 +959,18 @@ func (s *abstractSession) LiveServers() (addrs []string) {
 //
 // Creating this value is a very lightweight operation, and
 // involves no network communication.
-func (s *abstractSession) DB(name string) *Database {
+func (s *abstractSession) DB(name string) *abstactDatabase {
 	if name == "" {
 		name = s.defaultdb
 	}
-	return &Database{s, name}
+	return &abstactDatabase{s, name}
 }
 
 // C returns a value representing the named collection.
 //
 // Creating this value is a very lightweight operation, and
 // involves no network communication.
-func (db *Database) C(name string) *Collection {
+func (db *abstactDatabase) C(name string) *Collection {
 	return &Collection{db, name, db.Name + "." + name}
 }
 
@@ -964,7 +989,7 @@ func (db *Database) C(name string) *Collection {
 //
 //	https://docs.mongodb.com/manual/core/views/
 //	https://docs.mongodb.com/manual/reference/method/db.createView/
-func (db *Database) CreateView(view string, source string, pipeline interface{}, collation *Collation) error {
+func (db *abstactDatabase) CreateView(view string, source string, pipeline interface{}, collation *Collation) error {
 	command := bson.D{{Name: "create", Value: view}, {Name: "viewOn", Value: source}, {Name: "pipeline", Value: pipeline}}
 	if collation != nil {
 		command = append(command, bson.DocElem{Name: "collation", Value: collation})
@@ -973,16 +998,16 @@ func (db *Database) CreateView(view string, source string, pipeline interface{},
 }
 
 // With returns a copy of db that uses session s.
-func (db *Database) With(s Session) *Database {
+func (db *abstactDatabase) With(s Session) Database {
 	newdb := *db
-	newdb.Session = s
+	newdb.session = s
 	return &newdb
 }
 
 // With returns a copy of c that uses session s.
 func (c *Collection) With(s Session) *Collection {
 	newdb := *c.Database
-	newdb.Session = s
+	newdb.session = s
 	newc := *c
 	newc.Database = &newdb
 	return &newc
@@ -1001,7 +1026,7 @@ func (c *Collection) With(s Session) *Collection {
 //	http://www.mongodb.org/display/DOCS/GridFS
 //	http://www.mongodb.org/display/DOCS/GridFS+Tools
 //	http://www.mongodb.org/display/DOCS/GridFS+Specification
-func (db *Database) GridFS(prefix string) *GridFS {
+func (db *abstactDatabase) GridFS(prefix string) *GridFS {
 	return newGridFS(db, prefix)
 }
 
@@ -1024,8 +1049,8 @@ func (db *Database) GridFS(prefix string) *GridFS {
 //
 //	http://www.mongodb.org/display/DOCS/Commands
 //	http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
-func (db *Database) Run(cmd interface{}, result interface{}) error {
-	socket, err := db.Session.acquireSocket(true)
+func (db *abstactDatabase) Run(cmd interface{}, result interface{}) error {
+	socket, err := db.session.acquireSocket(true)
 	if err != nil {
 		return err
 	}
@@ -1038,7 +1063,7 @@ func (db *Database) Run(cmd interface{}, result interface{}) error {
 // runOnSocket does the same as Run, but guarantees that your command will be run
 // on the provided socket instance; if it's unhealthy, you will receive the error
 // from it.
-func (db *Database) runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error {
+func (db *abstactDatabase) runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error {
 	socket.Acquire()
 	defer socket.Release()
 	return db.run(socket, cmd, result)
@@ -1082,8 +1107,8 @@ type Credential struct {
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
-func (db *Database) Login(user, pass string) error {
-	return db.Session.Login(&Credential{Username: user, Password: pass, Source: db.Name})
+func (db *abstactDatabase) Login(user, pass string) error {
+	return db.session.Login(&Credential{Username: user, Password: pass, Source: db.Name})
 }
 
 // Login authenticates with MongoDB using the provided credential.  The
@@ -1139,8 +1164,8 @@ func (s *abstractSession) socketLogin(socket *mongoSocket) error {
 }
 
 // Logout removes any established authentication credentials for the database.
-func (db *Database) Logout() {
-	session := db.Session.(*abstractSession)
+func (db *abstactDatabase) Logout() {
+	session := db.session.(*abstractSession)
 	dbname := db.Name
 	session.m.Lock()
 	found := false
@@ -1276,7 +1301,7 @@ const (
 //
 //	http://docs.mongodb.org/manual/reference/user-privileges/
 //	http://docs.mongodb.org/manual/reference/privilege-documents/
-func (db *Database) UpsertUser(user *User) error {
+func (db *abstactDatabase) UpsertUser(user *User) error {
 	if user.Username == "" {
 		return fmt.Errorf("user has no Username")
 	}
@@ -1291,7 +1316,7 @@ func (db *Database) UpsertUser(user *User) error {
 	rundb := db
 	if user.UserSource != "" {
 		// Compatibility logic for the userSource field of MongoDB <= 2.4.X
-		rundb = db.Session.DB(user.UserSource)
+		rundb = db.session.DB(user.UserSource)
 	}
 	err := rundb.runUserCmd("updateUser", user)
 	// retry with createUser when isAuthError in order to enable the "localhost exception"
@@ -1359,7 +1384,7 @@ func isNotMasterError(err error) bool {
 	return ok && strings.Contains(e.Message, "not master")
 }
 
-func (db *Database) runUserCmd(cmdName string, user *User) error {
+func (db *abstactDatabase) runUserCmd(cmdName string, user *User) error {
 	cmd := make(bson.D, 0, 16)
 	cmd = append(cmd, bson.DocElem{Name: cmdName, Value: user.Username})
 	if user.Password != "" {
@@ -1389,7 +1414,7 @@ func (db *Database) runUserCmd(cmdName string, user *User) error {
 //
 // WARNING: This method is obsolete and should only be used with MongoDB 2.2
 // or earlier. For MongoDB 2.4 and on, use UpsertUser instead.
-func (db *Database) AddUser(username, password string, readOnly bool) error {
+func (db *abstactDatabase) AddUser(username, password string, readOnly bool) error {
 	// Try to emulate the old behavior on 2.6+
 	user := &User{Username: username, Password: password}
 	if db.Name == "admin" {
@@ -1423,7 +1448,7 @@ func (db *Database) AddUser(username, password string, readOnly bool) error {
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
-func (db *Database) RemoveUser(user string) error {
+func (db *abstactDatabase) RemoveUser(user string) error {
 	err := db.Run(bson.D{{Name: "dropUser", Value: user}}, nil)
 	if isNoCmd(err) {
 		users := db.C("system.users")
@@ -1728,7 +1753,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 		return err
 	}
 
-	session := c.Database.Session
+	session := c.Database.session
 	cacheKey := c.FullName + "\x00" + keyInfo.name
 	if session.Cluster().HasCachedIndex(cacheKey) {
 		return nil
@@ -1806,7 +1831,7 @@ func (c *Collection) DropIndex(key ...string) error {
 		return err
 	}
 
-	session := c.Database.Session
+	session := c.Database.session
 	cacheKey := c.FullName + "\x00" + keyInfo.name
 	session.Cluster().CacheIndex(cacheKey, false)
 
@@ -1835,7 +1860,7 @@ func (c *Collection) DropIndex(key ...string) error {
 //
 //	err := collection.DropIndex("customIndexName")
 func (c *Collection) DropIndexName(name string) error {
-	session := c.Database.Session
+	session := c.Database.session
 
 	session = session.Clone()
 	defer session.Close()
@@ -1882,7 +1907,7 @@ func (c *Collection) DropIndexName(name string) error {
 
 // DropAllIndexes drops all the indexes from the c collection
 func (c *Collection) DropAllIndexes() error {
-	session := c.Database.Session
+	session := c.Database.session
 	session.ResetIndexCache()
 
 	session = session.Clone()
@@ -1918,7 +1943,7 @@ func (s *abstractSession) nonEventual() Session {
 //
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
-	cloned := c.Database.Session.nonEventual().(*abstractSession)
+	cloned := c.Database.session.nonEventual().(*abstractSession)
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -2615,7 +2640,7 @@ func (s *abstractSession) FsyncUnlock() error {
 //	http://www.mongodb.org/display/DOCS/Querying
 //	http://www.mongodb.org/display/DOCS/Advanced+Queries
 func (c *Collection) Find(query interface{}) *Query {
-	session := c.Database.Session.(*abstractSession)
+	session := c.Database.session.(*abstractSession)
 	session.m.RLock()
 	q := &Query{session: session, query: session.queryConfig}
 	session.m.RUnlock()
@@ -2643,7 +2668,7 @@ func (c *Collection) Repair() *Iter {
 	// Clone session and set it to Monotonic mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
-	session := c.Database.Session
+	session := c.Database.session
 	cloned := session.nonEventual().(*abstractSession)
 	defer cloned.Close()
 
@@ -2712,7 +2737,7 @@ type pipeCmdCursor struct {
 //
 
 func (c *Collection) Pipe(pipeline interface{}) *Pipe {
-	session := c.Database.Session.(*abstractSession)
+	session := c.Database.session.(*abstractSession)
 	session.m.RLock()
 	batchSize := int(session.queryConfig.op.limit)
 	session.m.RUnlock()
@@ -2793,7 +2818,7 @@ func (p *Pipe) Iter() *Iter {
 // session.Ping()) before calling NewIter.
 func (c *Collection) NewIter(session Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter {
 	var server *mongoServer
-	csession := c.Database.Session.(*abstractSession)
+	csession := c.Database.session.(*abstractSession)
 	csession.m.RLock()
 	socket := csession.masterSocket
 	if socket == nil {
@@ -3197,7 +3222,7 @@ func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err erro
 }
 
 // DropDatabase removes the entire database including all of its collections.
-func (db *Database) DropDatabase() error {
+func (db *abstactDatabase) DropDatabase() error {
 	return db.Run(bson.D{{Name: "dropDatabase", Value: 1}}, nil)
 }
 
@@ -3857,14 +3882,14 @@ type getMoreCmd struct {
 // run duplicates the behavior of collection.Find(query).One(&result)
 // as performed by Database.Run, specializing the logic for running
 // database commands on a given socket.
-func (db *Database) run(socket *mongoSocket, cmd, result interface{}) (err error) {
+func (db *abstactDatabase) run(socket *mongoSocket, cmd, result interface{}) (err error) {
 	// Database.Run:
 	if name, ok := cmd.(string); ok {
 		cmd = bson.D{{Name: name, Value: 1}}
 	}
 
 	// Collection.Find:
-	session := db.Session.(*abstractSession)
+	session := db.session.(*abstractSession)
 	session.m.RLock()
 	op := session.queryConfig.op // Copy.
 	session.m.RUnlock()
@@ -3925,12 +3950,12 @@ type DBRef struct {
 // Relevant documentation:
 //
 //	http://www.mongodb.org/display/DOCS/Database+References
-func (db *Database) FindRef(ref *DBRef) *Query {
+func (db *abstactDatabase) FindRef(ref *DBRef) *Query {
 	var c *Collection
 	if ref.Database == "" {
 		c = db.C(ref.Collection)
 	} else {
-		c = db.Session.DB(ref.Database).C(ref.Collection)
+		c = db.session.DB(ref.Database).C(ref.Collection)
 	}
 	return c.FindId(ref.Id)
 }
@@ -3953,11 +3978,11 @@ func (s *abstractSession) FindRef(ref *DBRef) *Query {
 }
 
 // CollectionNames returns the collection names present in the db database.
-func (db *Database) CollectionNames() (names []string, err error) {
+func (db *abstactDatabase) CollectionNames() (names []string, err error) {
 	// Clone session and set it to Monotonic mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
-	cloned := db.Session.nonEventual().(*abstractSession)
+	cloned := db.session.nonEventual().(*abstractSession)
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -5298,7 +5323,7 @@ func (r *writeCmdResult) BulkErrorCases() []BulkErrorCase {
 // LastError result is made available in lerr, and if lerr.Err is set it
 // will also be returned as err.
 func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err error) {
-	s := c.Database.Session.(*abstractSession)
+	s := c.Database.session.(*abstractSession)
 	socket, err := s.acquireSocket(c.Database.Name == "local")
 	if err != nil {
 		return nil, err
