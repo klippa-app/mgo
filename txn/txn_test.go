@@ -22,8 +22,8 @@ type S struct {
 	server   dbtest.DBServer
 	session  mgo.Session
 	db       mgo.Database
-	tc, sc   *mgo.Collection
-	accounts *mgo.Collection
+	tc, sc   mgo.Collection
+	accounts mgo.Collection
 	runner   *txn.Runner
 }
 

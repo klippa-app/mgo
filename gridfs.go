@@ -59,8 +59,8 @@ import (
 //	https://docs.mongodb.com/manual/core/gridfs/#gridfs-chunks-collection
 //	https://docs.mongodb.com/manual/core/gridfs/#gridfs-files-collection
 type GridFS struct {
-	Files  *Collection
-	Chunks *Collection
+	Files  Collection
+	Chunks Collection
 }
 
 type gfsFileMode int
@@ -293,7 +293,7 @@ func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 //	if iter.Close() != nil {
 //	    panic(iter.Close())
 //	}
-func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
+func (gfs *GridFS) OpenNext(iter Iter, file **GridFile) bool {
 	if *file != nil {
 		// Ignoring the error here shouldn't be a big deal
 		// as we're reading the file and the loop iteration
@@ -324,7 +324,7 @@ func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 //
 //	files := db.C("fs" + ".files")
 //	iter := files.Find(nil).Iter()
-func (gfs *GridFS) Find(query interface{}) *Query {
+func (gfs *GridFS) Find(query interface{}) IQuery {
 	return gfs.Files.Find(query)
 }
 
@@ -758,11 +758,11 @@ func (file *GridFile) getChunk() (data []byte, err error) {
 		cache.wait.Lock()
 		debugf("GridFile %p: Scheduling chunk %d for background caching", file, file.chunk)
 		// Clone the session to avoid having it closed in between.
-		chunks := file.gfs.Chunks
-		session := chunks.Database.session.Clone()
+		chunks := file.gfs.Chunks.(*collection)
+		session := chunks.Database().Session().Clone()
 		go func(id interface{}, n int) {
 			defer session.Close()
-			chunks = chunks.With(session)
+			chunks = chunks.With(session).(*collection)
 			var doc gfsChunk
 			cache.err = chunks.Find(bson.D{{Name: "files_id", Value: id}, {Name: "n", Value: n}}).One(&doc)
 			cache.data = doc.Data

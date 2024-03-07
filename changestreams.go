@@ -18,12 +18,12 @@ const (
 )
 
 type ChangeStream struct {
-	iter           *Iter
+	iter           Iter
 	isClosed       bool
 	options        ChangeStreamOptions
 	pipeline       interface{}
 	resumeToken    *bson.Raw
-	collection     *Collection
+	collection     Collection
 	readPreference *ReadPreference
 	err            error
 	m              sync.Mutex
@@ -54,7 +54,7 @@ var errMissingResumeToken = errors.New("resume token missing from result")
 
 // Watch constructs a new ChangeStream capable of receiving continuing data
 // from the database.
-func (coll *Collection) Watch(pipeline interface{},
+func (coll *collection) Watch(pipeline interface{},
 	options ChangeStreamOptions) (*ChangeStream, error) {
 
 	if pipeline == nil {
@@ -69,7 +69,7 @@ func (coll *Collection) Watch(pipeline interface{},
 	if options.BatchSize > 0 {
 		pipe.Batch(options.BatchSize)
 	}
-	pIter := pipe.Iter()
+	pIter := pipe.Iter().(*abstractIter)
 
 	// check that there was no issue creating the iterator.
 	// this will fail immediately with an error from the server if running against
@@ -187,7 +187,7 @@ func (changeStream *ChangeStream) Close() error {
 		changeStream.err = err
 	}
 	if changeStream.sessionCopied {
-		changeStream.iter.session.Close()
+		changeStream.iter.(*abstractIter).session.Close()
 		changeStream.sessionCopied = false
 	}
 	return err
@@ -251,11 +251,11 @@ func (changeStream *ChangeStream) resume() error {
 	// copy the information for the new socket.
 
 	// Thanks to Copy() future uses will acquire a new socket against the newly selected DB.
-	newSession := changeStream.iter.session.Copy()
+	newSession := changeStream.iter.(*abstractIter).session.Copy()
 
 	// fetch the cursor from the iterator and use it to run a killCursors
 	// on the connection.
-	cursorId := changeStream.iter.op.cursorId
+	cursorId := changeStream.iter.(*abstractIter).op.cursorId
 	err := runKillCursorsOnSession(newSession, cursorId)
 	if err != nil {
 		return err
@@ -263,9 +263,9 @@ func (changeStream *ChangeStream) resume() error {
 
 	// change out the old connection to the database with the new connection.
 	if changeStream.sessionCopied {
-		changeStream.collection.Database.session.Close()
+		changeStream.collection.Database().Session().Close()
 	}
-	changeStream.collection.Database.session = newSession
+	changeStream.collection.Database().With(newSession)
 	changeStream.sessionCopied = true
 
 	opts := changeStream.options
@@ -281,7 +281,7 @@ func (changeStream *ChangeStream) resume() error {
 	if err := changeStream.iter.Err(); err != nil {
 		return err
 	}
-	changeStream.iter.isChangeStream = true
+	changeStream.iter.(*abstractIter).isChangeStream = true
 	return nil
 }
 
