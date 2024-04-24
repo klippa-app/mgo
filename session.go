@@ -87,15 +87,13 @@ type Session interface {
 	LiveServers() (addrs []string)
 	DB(name string) Database
 	Login(cred *Credential) error
-	socketLogin(socket *mongoSocket) error
 	LogoutAll()
-	nonEventual() Session
 	ResetIndexCache()
 	New() Session
 	Copy() Session
 	Clone() Session
 	Close()
-	Cluster() *mongoCluster
+	// Cluster() *mongoCluster
 	Refresh()
 	SetMode(consistency Mode, refresh bool)
 	Mode() Mode
@@ -110,9 +108,8 @@ type Session interface {
 	Safe() (safe *Safe)
 	SetSafe(safe *Safe)
 	EnsureSafe(safe *Safe)
-	ensureSafe(safe *Safe)
+	// ensureSafe(safe *Safe)
 	Run(cmd interface{}, result interface{}) error
-	runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error
 	SelectServers(tags ...bson.D)
 	Ping() error
 	Fsync(async bool) error
@@ -120,11 +117,14 @@ type Session interface {
 	FsyncUnlock() error
 	FindRef(ref *DBRef) IQuery
 	DatabaseNames() (names []string, err error)
-	prepareQuery(op *queryOp)
 	BuildInfo() (info BuildInfo, err error)
-	acquireSocket(slaveOk bool) (*mongoSocket, error)
-	setSocket(socket *mongoSocket)
-	unsetSocket()
+	// socketLogin(socket *mongoSocket) error
+	// nonEventual() Session
+	// runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error
+	// prepareQuery(op *queryOp)
+	// acquireSocket(slaveOk bool) (*mongoSocket, error)
+	// setSocket(socket *mongoSocket)
+	// unsetSocket()
 }
 
 // mgo.v3: Drop Strong mode, suffix all modes with "Mode".
@@ -163,20 +163,21 @@ type Database interface {
 	With(s Session) Database
 	GridFS(prefix string) *GridFS
 	Run(cmd interface{}, result interface{}) error
-	runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error
 	Login(user, pass string) error
 	Logout()
 	UpsertUser(user *User) error
-	runUserCmd(cmdName string, user *User) error
 	AddUser(username, password string, readOnly bool) error
 	RemoveUser(user string) error
 	DropDatabase() error
-	run(socket *mongoSocket, cmd, result interface{}) (err error)
 	FindRef(ref *DBRef) IQuery
 	CollectionNames() (names []string, err error)
 
 	Session() Session
 	Name() string
+
+	// runUserCmd(cmdName string, user *User) error
+	// runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error
+	// run(socket *mongoSocket, cmd, result interface{}) (err error)
 }
 
 // abstactDatabase holds collections of documents
@@ -209,7 +210,7 @@ type Collection interface {
 	// Repair() *Iter
 	FindId(id interface{}) IQuery
 	Pipe(pipeline interface{}) Pipe
-	newIter(session Session, firstBatch []bson.Raw, cursorId int64, err error) Iter
+	// newIter(session Session, firstBatch []bson.Raw, cursorId int64, err error) Iter
 	Insert(docs ...interface{}) error
 	Update(selector interface{}, update interface{}) error
 	UpdateId(id interface{}, update interface{}) error
@@ -222,9 +223,9 @@ type Collection interface {
 	DropCollection() error
 	// Create(info *CollectionInfo) error
 	Count() (n int, err error)
-	writeOp(op interface{}, ordered bool) (lerr *LastError, err error)
-	writeOpQuery(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered bool) (lerr *LastError, err error)
-	writeOpCommand(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered, bypassValidation bool) (lerr *LastError, err error)
+	// writeOp(op interface{}, ordered bool) (lerr *LastError, err error)
+	// writeOpQuery(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered bool) (lerr *LastError, err error)
+	// writeOpCommand(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered, bypassValidation bool) (lerr *LastError, err error)
 
 	Database() Database
 	Name() string
@@ -305,10 +306,10 @@ type Iter interface {
 	Next(result interface{}) bool
 	All(result interface{}) error
 	For(result interface{}, f func() error) (err error)
-	acquireSocket() (*mongoSocket, error)
-	getMore()
-	getMoreCmd() *queryOp
-	replyFunc() replyFunc
+	// acquireSocket() (*mongoSocket, error)
+	// getMore()
+	// getMoreCmd() *queryOp
+	// replyFunc() replyFunc
 }
 
 // abstractIter stores informations about a Cursor
@@ -1136,7 +1137,7 @@ func (db *abstactDatabase) GridFS(prefix string) *GridFS {
 //	http://www.mongodb.org/display/DOCS/Commands
 //	http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 func (db *abstactDatabase) Run(cmd interface{}, result interface{}) error {
-	socket, err := db.session.acquireSocket(true)
+	socket, err := db.session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		return err
 	}
@@ -1841,7 +1842,7 @@ func (c *collection) EnsureIndex(index Index) error {
 
 	session := c.Database().Session()
 	cacheKey := c.fullName + "\x00" + keyInfo.name
-	if session.Cluster().HasCachedIndex(cacheKey) {
+	if session.(*abstractSession).Cluster().HasCachedIndex(cacheKey) {
 		return nil
 	}
 
@@ -1898,7 +1899,7 @@ NextField:
 		err = db.C("system.indexes").Insert(&spec)
 	}
 	if err == nil {
-		session.Cluster().CacheIndex(cacheKey, true)
+		session.(*abstractSession).Cluster().CacheIndex(cacheKey, true)
 	}
 	return err
 }
@@ -1919,7 +1920,7 @@ func (c *collection) DropIndex(key ...string) error {
 
 	session := c.Database().Session()
 	cacheKey := c.fullName + "\x00" + keyInfo.name
-	session.Cluster().CacheIndex(cacheKey, false)
+	session.(*abstractSession).Cluster().CacheIndex(cacheKey, false)
 
 	session = session.Clone()
 	defer session.Close()
@@ -1974,7 +1975,7 @@ func (c *collection) DropIndexName(name string) error {
 		}
 
 		cacheKey := c.fullName + "\x00" + keyInfo.name
-		session.Cluster().CacheIndex(cacheKey, false)
+		session.(*abstractSession).Cluster().CacheIndex(cacheKey, false)
 	}
 
 	result := struct {
@@ -2029,7 +2030,7 @@ func (s *abstractSession) nonEventual() Session {
 //
 // See the EnsureIndex method for more details on indexes.
 func (c *collection) Indexes() (indexes []Index, err error) {
-	cloned := c.Database().Session().nonEventual().(*abstractSession)
+	cloned := c.Database().Session().(*abstractSession).nonEventual().(*abstractSession)
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -2048,9 +2049,9 @@ func (c *collection) Indexes() (indexes []Index, err error) {
 		}
 		ns := strings.SplitN(result.Cursor.NS, ".", 2)
 		if len(ns) < 2 {
-			iter = c.With(cloned).newIter(nil, firstBatch, result.Cursor.Id, nil)
+			iter = c.With(cloned).(*collection).newIter(nil, firstBatch, result.Cursor.Id, nil)
 		} else {
-			iter = cloned.DB(ns[0]).C(ns[1]).newIter(nil, firstBatch, result.Cursor.Id, nil)
+			iter = cloned.DB(ns[0]).C(ns[1]).(*collection).newIter(nil, firstBatch, result.Cursor.Id, nil)
 		}
 	} else if isNoCmd(err) {
 		// Command not yet supported. Query the database instead.
@@ -2629,7 +2630,7 @@ func (s *abstractSession) Run(cmd interface{}, result interface{}) error {
 // on the provided socket instance; if it's unhealthy, you will receive the error
 // from it.
 func (s *abstractSession) runOnSocket(socket *mongoSocket, cmd interface{}, result interface{}) error {
-	return s.DB("admin").runOnSocket(socket, cmd, result)
+	return s.DB("admin").(*abstactDatabase).runOnSocket(socket, cmd, result)
 }
 
 // SelectServers restricts communication to servers configured with the
@@ -2755,7 +2756,7 @@ func (c *collection) Repair() Iter {
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
 	session := c.Database().Session()
-	cloned := session.nonEventual().(*abstractSession)
+	cloned := session.(*abstractSession).nonEventual().(*abstractSession)
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -3812,7 +3813,7 @@ func (q *abstractQuery) One(result interface{}) (err error) {
 	op := q.op // Copy.
 	q.m.Unlock()
 
-	socket, err := session.acquireSocket(true)
+	socket, err := session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		return err
 	}
@@ -3820,7 +3821,7 @@ func (q *abstractQuery) One(result interface{}) (err error) {
 
 	op.limit = -1
 
-	session.prepareQuery(&op)
+	session.(*abstractSession).prepareQuery(&op)
 
 	expectFindReply := prepareFindOp(socket, &op, 1)
 
@@ -4079,7 +4080,7 @@ func (db *abstactDatabase) CollectionNames() (names []string, err error) {
 	// Clone session and set it to Monotonic mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
-	cloned := db.session.nonEventual().(*abstractSession)
+	cloned := db.session.(*abstractSession).nonEventual().(*abstractSession)
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -4098,9 +4099,9 @@ func (db *abstactDatabase) CollectionNames() (names []string, err error) {
 		var iter Iter
 		ns := strings.SplitN(result.Cursor.NS, ".", 2)
 		if len(ns) < 2 {
-			iter = db.With(cloned).C("").newIter(nil, firstBatch, result.Cursor.Id, nil)
+			iter = db.With(cloned).C("").(*collection).newIter(nil, firstBatch, result.Cursor.Id, nil)
 		} else {
-			iter = cloned.DB(ns[0]).C(ns[1]).newIter(nil, firstBatch, result.Cursor.Id, nil)
+			iter = cloned.DB(ns[0]).C(ns[1]).(*collection).newIter(nil, firstBatch, result.Cursor.Id, nil)
 		}
 		var coll struct{ Name string }
 		for iter.Next(&coll) {
@@ -4179,14 +4180,14 @@ func (q *abstractQuery) Iter() Iter {
 	iter.op.replyFunc = iter.replyFunc()
 	iter.docsToReceive++
 
-	socket, err := session.acquireSocket(true)
+	socket, err := session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		iter.err = err
 		return iter
 	}
 	defer socket.Release()
 
-	session.prepareQuery(&op)
+	session.(*abstractSession).prepareQuery(&op)
 	op.replyFunc = iter.op.replyFunc
 
 	if prepareFindOp(socket, &op, limit) {
@@ -4265,11 +4266,11 @@ func (q *abstractQuery) Tail(timeout time.Duration) Iter {
 	iter.op.limit = op.limit
 	iter.op.replyFunc = iter.replyFunc()
 	iter.docsToReceive++
-	session.prepareQuery(&op)
+	session.(*abstractSession).prepareQuery(&op)
 	op.replyFunc = iter.op.replyFunc
 	op.flags |= flagTailable | flagAwaitData
 
-	socket, err := session.acquireSocket(true)
+	socket, err := session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		iter.err = err
 	} else {
@@ -4625,7 +4626,7 @@ func (iter *abstractIter) For(result interface{}, f func() error) (err error) {
 // socket depends on the cluster sync loop, and the cluster sync loop might
 // attempt actions which cause replyFunc to be called, inducing a deadlock.
 func (iter *abstractIter) acquireSocket() (*mongoSocket, error) {
-	socket, err := iter.session.acquireSocket(true)
+	socket, err := iter.session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		return nil, err
 	}
@@ -5656,7 +5657,7 @@ func (c *collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 	}
 
 	var result writeCmdResult
-	err = c.Database().run(socket, cmd, &result)
+	err = c.Database().(*abstactDatabase).run(socket, cmd, &result)
 	debugf("Write command result: %#v (err=%v)", result, err)
 	ecases := result.BulkErrorCases()
 	lerr = &LastError{

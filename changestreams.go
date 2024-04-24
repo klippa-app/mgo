@@ -342,7 +342,7 @@ func isResumableError(err error) bool {
 }
 
 func runKillCursorsOnSession(session Session, cursorId int64) error {
-	socket, err := session.acquireSocket(true)
+	socket, err := session.(*abstractSession).acquireSocket(true)
 	if err != nil {
 		return err
 	}
