@@ -4,12 +4,6 @@ github.com/kr/pretty
 # github.com/kr/text v0.1.0
 ## explicit
 github.com/kr/text
-# go.mongodb.org/mongo-driver/v2 v2.2.3
-## explicit; go 1.18
-go.mongodb.org/mongo-driver/v2/bson
-go.mongodb.org/mongo-driver/v2/internal/bsoncoreutil
-go.mongodb.org/mongo-driver/v2/internal/decimal128
-go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore
 # golang.org/x/net v0.22.0
 ## explicit; go 1.18
 golang.org/x/net/context

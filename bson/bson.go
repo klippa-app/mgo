@@ -50,8 +50,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	mongobson "go.mongodb.org/mongo-driver/v2/bson"
 )
 
 //go:generate go run bson_corpus_spec_test_generator.go
@@ -214,8 +212,8 @@ func (o *ObjectId) IsZero() bool {
 	return o == nil || len([]rune(*o)) == 0
 }
 
-func (o ObjectId) MarshalBSONValue() (mongobson.Type, []byte, error) {
-	return mongobson.TypeObjectID, []byte(o), nil
+func (o ObjectId) MarshalBSONValue() (byte, []byte, error) {
+	return 0x07, []byte(o), nil
 }
 
 // ObjectIdHex returns an ObjectId from the provided hex representation.
